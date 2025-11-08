@@ -23,6 +23,15 @@ type BotApp struct {
 	config *Config
 }
 
+// Структура для хранения данных пользователя
+type UserData struct {
+	FIO       string
+	Telephone string
+	Transport string
+	CarNumber string
+	MessageID int // ID сообщения для возможности удаления
+}
+
 // LoadConfig загружает конфигурацию из .env файла
 func LoadConfig() (*Config, error) {
 	err := godotenv.Load()
@@ -108,6 +117,15 @@ func (app *BotApp) SendUserData(fio string, telephone string, transport string, 
 	log.Printf("Отправка данных в Telegram: %s, %s, транспорт: %s, номер: %s", 
 		fio, telephone, transport, carNumber)
 
+	// Создаем inline-кнопку для отклонения
+	rejectBtn := telebot.Btn{
+		Unique: "reject_guest",
+		Text:   "❌ Отклонить",
+	}
+
+	selector := &telebot.ReplyMarkup{}
+	selector.Inline(selector.Row(rejectBtn))
+
 	var successCount int
 	var errors []string
 
@@ -115,7 +133,7 @@ func (app *BotApp) SendUserData(fio string, telephone string, transport string, 
 	if len(app.config.AdminChatIDs) > 0 {
 		for _, adminChatID := range app.config.AdminChatIDs {
 			recipient := &telebot.Chat{ID: adminChatID}
-			_, err := app.bot.Send(recipient, userData)
+			msg, err := app.bot.Send(recipient, userData, selector)
 			if err != nil {
 				errorMsg := fmt.Sprintf("Ошибка отправки сообщения администратору (Chat ID: %d): %v", adminChatID, err)
 				log.Printf(errorMsg)
@@ -123,6 +141,18 @@ func (app *BotApp) SendUserData(fio string, telephone string, transport string, 
 			} else {
 				log.Printf("Сообщение успешно отправлено администратору (Chat ID: %d)", adminChatID)
 				successCount++
+
+				// Сохраняем данные для возможности обработки callback
+				data := &UserData{
+					FIO:       fio,
+					Telephone: telephone,
+					Transport: transport,
+					CarNumber: carNumber,
+					MessageID: msg.ID,
+				}
+				
+				// Регистрируем обработчик для этой кнопки
+				app.registerRejectHandler(msg.Chat.ID, msg.ID, data)
 			}
 		}
 	} else {
@@ -130,7 +160,7 @@ func (app *BotApp) SendUserData(fio string, telephone string, transport string, 
 		log.Printf("Chat IDs не зарегистрированы, пытаемся отправить по username")
 		for _, username := range app.config.AllowedUsers {
 			recipient := &telebot.User{Username: username}
-			_, err := app.bot.Send(recipient, userData)
+			msg, err := app.bot.Send(recipient, userData, selector)
 			if err != nil {
 				errorMsg := fmt.Sprintf("Ошибка отправки сообщения пользователю %s: %v", username, err)
 				log.Printf(errorMsg)
@@ -138,6 +168,18 @@ func (app *BotApp) SendUserData(fio string, telephone string, transport string, 
 			} else {
 				log.Printf("Сообщение успешно отправлено пользователю %s", username)
 				successCount++
+
+				// Сохраняем данные для возможности обработки callback
+				data := &UserData{
+					FIO:       fio,
+					Telephone: telephone,
+					Transport: transport,
+					CarNumber: carNumber,
+					MessageID: msg.ID,
+				}
+				
+				// Регистрируем обработчик для этой кнопки
+				app.registerRejectHandler(msg.Chat.ID, msg.ID, data)
 			}
 		}
 	}
@@ -153,6 +195,87 @@ func (app *BotApp) SendUserData(fio string, telephone string, transport string, 
 	return nil
 }
 
+// registerRejectHandler регистрирует обработчик для кнопки отклонения
+func (app *BotApp) registerRejectHandler(chatID int64, messageID int, userData *UserData) {
+	// Создаем уникальный идентификатор для callback
+	callbackData := fmt.Sprintf("reject_%d_%d", chatID, messageID)
+	
+	rejectBtn := telebot.Btn{
+		Unique: callbackData,
+		Text:   "❌ Отклонить",
+	}
+
+	selector := &telebot.ReplyMarkup{}
+	selector.Inline(selector.Row(rejectBtn))
+
+	// Регистрируем обработчик для этой конкретной кнопки
+	app.bot.Handle(&rejectBtn, func(ctx telebot.Context) error {
+		// Проверяем, является ли пользователь администратором
+		if !app.isAdmin(ctx.Sender()) {
+			return ctx.Respond(&telebot.CallbackResponse{
+				Text:      "❌ У вас нет прав для выполнения этого действия",
+				ShowAlert: true,
+			})
+		}
+
+		// Удаляем сообщение
+		err := ctx.Delete()
+		if err != nil {
+			log.Printf("Ошибка при удалении сообщения: %v", err)
+			return ctx.Respond(&telebot.CallbackResponse{
+				Text:      "❌ Ошибка при удалении сообщения",
+				ShowAlert: true,
+			})
+		}
+
+		// Отправляем подтверждение
+		log.Printf("Администратор %s отклонил заявку от %s", ctx.Sender().Username, userData.FIO)
+		return ctx.Respond(&telebot.CallbackResponse{
+			Text:      "✅ Заявка отклонена и удалена",
+		})
+	})
+}
+
+// Глобальный обработчик для кнопок отклонения (альтернативный подход)
+func (app *BotApp) setupRejectHandlers() {
+	// Обработчик для универсальной кнопки отклонения
+	app.bot.Handle(telebot.OnCallback, func(ctx telebot.Context) error {
+		callback := ctx.Callback()
+		if callback == nil {
+			return nil
+		}
+
+		// Проверяем, является ли это callback от кнопки отклонения
+		if strings.HasPrefix(callback.Data, "reject_") {
+			// Проверяем, является ли пользователь администратором
+			if !app.isAdmin(ctx.Sender()) {
+				return ctx.Respond(&telebot.CallbackResponse{
+					Text:      "❌ У вас нет прав для выполнения этого действия",
+					ShowAlert: true,
+				})
+			}
+
+			// Удаляем сообщение
+			err := ctx.Delete()
+			if err != nil {
+				log.Printf("Ошибка при удалении сообщения: %v", err)
+				return ctx.Respond(&telebot.CallbackResponse{
+					Text:      "❌ Ошибка при удалении сообщения",
+					ShowAlert: true,
+				})
+			}
+
+			// Отправляем подтверждение
+			log.Printf("Администратор %s отклонил заявку", ctx.Sender().Username)
+			return ctx.Respond(&telebot.CallbackResponse{
+				Text:      "✅ Заявка отклонена и удалена",
+			})
+		}
+
+		return nil
+	})
+}
+
 // GetBot возвращает экземпляр бота для использования в хендлерах
 func (app *BotApp) GetBot() *telebot.Bot {
 	return app.bot
@@ -160,6 +283,10 @@ func (app *BotApp) GetBot() *telebot.Bot {
 
 // isAdmin проверяет, является ли пользователь администратором
 func (app *BotApp) isAdmin(user *telebot.User) bool {
+	if user == nil || user.Username == "" {
+		return false
+	}
+	
 	username := strings.TrimPrefix(user.Username, "@")
 	for _, adminUser := range app.config.AllowedUsers {
 		if strings.EqualFold(username, adminUser) {
@@ -191,6 +318,9 @@ func (app *BotApp) Start() {
 	log.Printf("Разрешенные пользователи: %v", app.config.AllowedUsers)
 	log.Printf("Зарегистрированные Chat IDs: %v", app.config.AdminChatIDs)
 
+	// Настраиваем обработчики для кнопок
+	app.setupRejectHandlers()
+
 	// Команда /start
 	app.bot.Handle("/start", func(ctx telebot.Context) error {
 		user := ctx.Sender()
@@ -202,13 +332,15 @@ func (app *BotApp) Start() {
 				return ctx.Send(fmt.Sprintf(
 					"👋 Привет, администратор @%s!\n"+
 						"✅ Ваш Chat ID (%d) зарегистрирован!\n"+
-						"Теперь вы будете получать уведомления о новых сообщениях.",
+						"Теперь вы будете получать уведомления о новых сообщениях.\n\n"+
+						"❌ Вы можете отклонять заявки кнопкой под каждым сообщением.",
 					user.Username, chatID,
 				))
 			}
 			return ctx.Send(fmt.Sprintf(
 				"👋 Привет, администратор @%s!\n"+
-					"✅ Вы уже зарегистрированы для получения уведомлений.",
+					"✅ Вы уже зарегистрированы для получения уведомлений.\n\n"+
+					"❌ Вы можете отклонять заявки кнопкой под каждым сообщением.",
 				user.Username,
 			))
 		}
