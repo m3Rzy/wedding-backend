@@ -55,7 +55,7 @@ func main() {
 
 	// Настраиваем HTTP маршруты с CORS
 	mux.HandleFunc("/get", enableCORS(handler.GetHandler))
-	mux.HandleFunc("/api", enableCORS(handler.ContactHandler))
+	mux.HandleFunc("/", enableCORS(handler.ContactHandler))
 
 	// Запускаем HTTP сервер
 	log.Println("HTTP сервер запущен на порту 8080")

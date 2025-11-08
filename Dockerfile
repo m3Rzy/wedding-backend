@@ -1,5 +1,5 @@
 # Стадия сборки
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23.2-alpine AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -14,10 +14,6 @@ RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 COPY --from=builder /app/main .
-
-# Создаем непривилегированного пользователя для безопасности
-RUN adduser -D -s /bin/sh appuser
-USER appuser
 
 EXPOSE 8080
 CMD ["./main"]
