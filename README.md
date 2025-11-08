@@ -1,5 +1,6 @@
 # Запуск на проде
 
+```
 docker stop go-backend
 docker rm go-backend
 docker rmi go-backend
@@ -10,3 +11,4 @@ docker run -d \
   -p 8080:8080 \
   go-backend
 docker logs -f go-backend
+```
