@@ -217,8 +217,15 @@ func (app *BotApp) Start() {
 				})
 			}
 
-			// Удаляем сообщение
-			err := ctx.Delete()
+			// Удаляем исходное сообщение с заявкой
+			chatID := callback.Message.Chat.ID
+			messageID := callback.Message.ID
+			
+			err := app.bot.Delete(&telebot.Message{
+				ID:   messageID,
+				Chat: &telebot.Chat{ID: chatID},
+			})
+			
 			if err != nil {
 				log.Printf("Ошибка при удалении сообщения: %v", err)
 				return ctx.Respond(&telebot.CallbackResponse{
@@ -227,7 +234,7 @@ func (app *BotApp) Start() {
 				})
 			}
 
-			// Отправляем подтверждение (опционально)
+			// Отправляем подтверждение
 			log.Printf("Администратор %s отклонил заявку", ctx.Sender().Username)
 			return ctx.Respond(&telebot.CallbackResponse{
 				Text: "✅ Заявка отклонена",
