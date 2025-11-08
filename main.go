@@ -57,13 +57,11 @@ func main() {
 	mux.HandleFunc("/get", enableCORS(handler.GetHandler))
 	mux.HandleFunc("/", enableCORS(handler.ContactHandler))
 
-	// ЗАПУСК С HTTPS НА ПОРТУ 443
-	log.Println("HTTPS сервер запущен на порту 443")
+	// Запускаем HTTP сервер
+	log.Println("HTTP сервер запущен на порту 8080")
 	log.Println("Server has been started successfully!")
-	
-	// Для порта 443 нужны права суперпользователя на Linux
-	err = http.ListenAndServeTLS(":443", "server.crt", "server.key", mux)
+	err = http.ListenAndServe(":8080", mux)
 	if err != nil {
-		log.Fatal("Ошибка запуска HTTPS сервера:", err)
+		log.Fatal(err)
 	}
 }
