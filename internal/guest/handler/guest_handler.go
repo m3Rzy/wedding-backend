@@ -59,6 +59,8 @@ func ContactHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Println(contact)
+
 	// Валидация данных
 	if contact.Fio == "" || contact.Telephone == "" {
 		http.Error(w, "ФИО и номер телефона обязательны", http.StatusBadRequest)
@@ -70,7 +72,7 @@ func ContactHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Отправляем данные в телеграм бот
 	if BotAppInstance != nil {
-		err := BotAppInstance.SendUserData(contact.Fio, contact.Telephone)
+		err := BotAppInstance.SendUserData(contact.Fio, contact.Telephone, contact.Transport, contact.CarNumber)
 		if err != nil {
 			log.Printf("Ошибка отправки в Telegram: %v", err)
 			http.Error(w, "Ошибка отправки уведомления", http.StatusInternalServerError)

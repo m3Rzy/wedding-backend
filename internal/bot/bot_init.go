@@ -84,18 +84,29 @@ func NewBotApp(config *Config) (*BotApp, error) {
 }
 
 // SendUserData отправляет данные пользователя всем администраторам
-func (app *BotApp) SendUserData(fio string, telephone string) error {
+func (app *BotApp) SendUserData(fio string, telephone string, transport string, carNumber string) error {
+	// Формируем сообщение в зависимости от типа транспорта
+	var transportInfo string
+	if transport == "car" && carNumber != "" {
+		transportInfo = fmt.Sprintf("🚗 Личный автомобиль\n🚙 Госномер: %s", carNumber)
+	} else {
+		transportInfo = "🚌 Трансфер"
+	}
+
 	userData := fmt.Sprintf(
 		"📨 Новый гость:\n"+
 			"👤 ФИО: %s\n"+
 			"📞 Телефон: %s\n"+
+			"📍 Транспорт: %s\n"+
 			"📅 Время: %s",
 		fio,
 		telephone,
+		transportInfo,
 		time.Now().Format("2006-01-02 15:04:05"),
 	)
 
-	log.Printf("Отправка данных в Telegram: %s, %s", fio, telephone)
+	log.Printf("Отправка данных в Telegram: %s, %s, транспорт: %s, номер: %s", 
+		fio, telephone, transport, carNumber)
 
 	var successCount int
 	var errors []string
